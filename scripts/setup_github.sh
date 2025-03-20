@@ -2,9 +2,9 @@
 
 # Script to set up and connect a local repository to GitHub
 
-# Load environment variables from .env file
+# Load GitHub token from .env file
 if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs -0)
+    GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' .env | cut -d '=' -f2)
 else
     echo "Error: .env file not found"
     exit 1
