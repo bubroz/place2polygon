@@ -5,6 +5,7 @@
 # Load GitHub token from .env file
 if [ -f .env ]; then
     GITHUB_TOKEN=$(grep '^GITHUB_TOKEN=' .env | cut -d '=' -f2)
+    echo "Token loaded, length: ${#GITHUB_TOKEN} characters"
 else
     echo "Error: .env file not found"
     exit 1
@@ -25,19 +26,35 @@ echo "Setting up GitHub repository: $REPO_NAME"
 echo "Description: $REPO_DESC"
 echo "Visibility: $VISIBILITY"
 
+# Test GitHub API access
+echo "Testing GitHub API access..."
+USER_RESPONSE=$(curl -s -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user)
+if echo "$USER_RESPONSE" | grep -q "Bad credentials"; then
+    echo "Error: Invalid GitHub token. Please check your token and try again."
+    exit 1
+fi
+
 # Create the repository on GitHub using the GitHub API
 echo "Creating repository on GitHub..."
-curl -s -X POST \
+CREATE_RESPONSE=$(curl -s -X POST \
     -H "Authorization: token $GITHUB_TOKEN" \
     -H "Accept: application/vnd.github.v3+json" \
     https://api.github.com/user/repos \
-    -d "{\"name\":\"$REPO_NAME\",\"description\":\"$REPO_DESC\",\"private\":$([ "$VISIBILITY" = "private" ] && echo "true" || echo "false")}" > /dev/null
+    -d "{\"name\":\"$REPO_NAME\",\"description\":\"$REPO_DESC\",\"private\":$([ "$VISIBILITY" = "private" ] && echo "true" || echo "false")}")
+
+# Check for errors in repository creation
+if echo "$CREATE_RESPONSE" | grep -q "errors"; then
+    echo "Error creating repository:"
+    echo "$CREATE_RESPONSE" | grep -o '"message": "[^"]*"' | sed 's/"message": "//'
+    exit 1
+fi
 
 # Get the GitHub username
-GITHUB_USERNAME=$(curl -s -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user | grep -o '"login": "[^"]*' | sed 's/"login": "//')
-
+GITHUB_USERNAME=$(echo "$USER_RESPONSE" | grep -o '"login": *"[^"]*"' | sed 's/"login": *"//' | sed 's/"$//')
 if [ -z "$GITHUB_USERNAME" ]; then
     echo "Error: Could not get GitHub username"
+    echo "API response snippet:"
+    echo "$USER_RESPONSE" | head -20
     exit 1
 fi
 
