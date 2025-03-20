@@ -23,6 +23,10 @@ This project was developed 100% with Claude-3.7-Sonnet in Cursor.
 - Robust persistent disk-based caching for Nominatim results
 - Strict rate limiting compliance with OSM usage policies
 
+## Core Functionality
+
+The primary purpose of Place2Polygon is to reliably extract accurate GeoJSON polygon boundaries from Nominatim for locations mentioned in text. While the tool generates interactive map visualizations (map.html files), these are primarily for demonstration and analysis purposes. The retrieved GeoJSON data can be used in various downstream applications beyond visualization.
+
 ## Current Coverage
 
 Place2Polygon currently focuses on United States locations with plans to expand to other countries in future releases. The US focus provides:
@@ -94,16 +98,14 @@ locations = place2polygon.extract_locations(text)
 # Find boundaries
 locations_with_boundaries = place2polygon.find_polygon_boundaries(locations)
 
-# Create a map
-map_path = place2polygon.create_map(locations_with_boundaries, title="My Map")
+# Access the GeoJSON data (core functionality)
+for location in locations_with_boundaries:
+    if 'boundary' in location and 'geojson' in location['boundary']:
+        geojson_data = location['boundary']['geojson']
+        print(f"Retrieved {geojson_data['type']} for {location['name']}")
 
-# All-in-one function
-locations, map_path = place2polygon.extract_and_map_locations(
-    text=text,
-    output_path="my_map.html",
-    min_relevance_score=30.0,
-    use_gemini=False  # Set to True for more efficient and precise results (requires API key)
-)
+# Optionally create a visualization
+map_path = place2polygon.create_map(locations_with_boundaries, title="My Map")
 ```
 
 ## Gemini Integration
