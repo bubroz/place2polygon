@@ -2,6 +2,10 @@
 
 A tool for extracting location mentions from text and finding their precise polygon boundaries using OpenStreetMap data, with an initial focus on United States locations.
 
+## Development
+
+This project was developed 100% with Claude-3.7-Sonnet in Cursor, demonstrating the capabilities of AI pair programming for geospatial application development.
+
 ## Features
 
 - Extract location mentions from text using spaCy NER
