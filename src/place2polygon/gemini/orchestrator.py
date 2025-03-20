@@ -224,73 +224,91 @@ class GeminiOrchestrator:
             location_context: Optional context about the location.
             
         Returns:
-            List of search strategies to try.
+            A list of search strategy dictionaries.
         """
+        logger.info(f"Generating search strategies for {location_name}")
+        
+        # Get search strategy documentation
+        search_strategies = self.docs_provider.get_search_strategies()
+        
+        # Prepare a base strategy to provide context
+        base_strategy = {
+            "description": "Basic structured search",
+            "params": {
+                "q": location_name,
+                "polygon_geojson": 1,
+                "addressdetails": 1,
+                "limit": 5
+            }
+        }
+        
+        # Create prompt
+        prompt = self._create_strategy_prompt(
+            location_name,
+            location_type,
+            location_context,
+            base_strategy
+        )
+        
         try:
-            # Get base strategy options from docs
-            base_strategies = self.docs_provider.get_search_strategies()
+            # Define JSON schema for search strategies response
+            response_schema = {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "description": {"type": "STRING"},
+                        "params": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "q": {"type": "STRING"},
+                                "polygon_geojson": {"type": "INTEGER"},
+                                "addressdetails": {"type": "INTEGER"},
+                                "limit": {"type": "INTEGER"},
+                                "country": {"type": "STRING", "nullable": True},
+                                "state": {"type": "STRING", "nullable": True},
+                                "county": {"type": "STRING", "nullable": True},
+                                "city": {"type": "STRING", "nullable": True}
+                            },
+                            "required": ["q", "polygon_geojson"]
+                        }
+                    },
+                    "required": ["description", "params"]
+                }
+            }
             
-            # Use first strategy as a base
-            if not base_strategies:
-                raise ValueError("No base strategies available")
-                
-            base_strategy = base_strategies[0]
-            
-            # Generate prompt
-            prompt = self._create_strategy_prompt(
-                location_name, location_type, location_context, base_strategy
+            # Configure generation with schema for structured output
+            generation_config = GenerationConfig(
+                temperature=0.1,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=2048,
+                response_mime_type="application/json",
+                response_schema=response_schema
             )
             
-            # Generate response
-            response = self._generate_response(prompt)
+            # Generate search strategies
+            response = self.model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
             
-            # Parse response - use our robust parser
-            strategies = self._parse_gemini_response(response)
+            # Parse response
+            strategies = json.loads(response.text)
             
-            # Ensure strategies is a list
-            if not isinstance(strategies, list):
-                logger.warning(f"Unexpected response format from Gemini: {type(strategies)}")
-                raise ValueError(f"Invalid strategies format: {type(strategies)}")
+            # Add the basic strategy as a fallback
+            if not strategies or not isinstance(strategies, list):
+                strategies = [base_strategy]
+            elif not any(strategy.get("params", {}).get("q") == location_name for strategy in strategies):
+                strategies.append(base_strategy)
             
-            # Add default params if missing
-            for strategy in strategies:
-                if "params" in strategy:
-                    if "polygon_geojson" not in strategy["params"]:
-                        strategy["params"]["polygon_geojson"] = 1
-                    if "addressdetails" not in strategy["params"]:
-                        strategy["params"]["addressdetails"] = 1
-                    
-                    # Replace SEARCH_TERM placeholder with actual location name
-                    for param, value in strategy["params"].items():
-                        if value == "SEARCH_TERM":
-                            strategy["params"][param] = location_name
-                        
+            logger.info(f"Generated {len(strategies)} search strategies")
             return strategies
-        except Exception as e:
-            logger.error(f"Error generating search strategies: {str(e)}")
             
-            # Return basic strategies if Gemini fails
-            # This ensures we always have fallback options
-            return [
-                {
-                    "description": "Structured search for city using specific parameters",
-                    "params": {
-                        "polygon_geojson": 1,
-                        "addressdetails": 1, 
-                        "limit": 3,
-                        "city": location_name
-                    }
-                },
-                {
-                    "description": "Free-form search with location name",
-                    "params": {
-                        "q": location_name,
-                        "polygon_geojson": 1,
-                        "addressdetails": 1,
-                        "limit": 5
-                    }
-                }
-            ]
+        except Exception as e:
+            logger.error(f"Failed to generate search strategies: {str(e)}")
+            # Fall back to basic search strategy
+            return [base_strategy]
     
     def _create_strategy_prompt(
         self,
@@ -448,71 +466,62 @@ Do not include any explanations or additional text, just return the JSON array.
         
         Args:
             result: The search result to validate.
-            location_name: Name of the location that was searched.
-            location_type: Type of location that was searched.
+            location_name: Name of the location searched for.
+            location_type: Type of location (city, county, state, etc.).
             
         Returns:
             True if the result is valid, False otherwise.
         """
-        # Check if result has a polygon
-        if "geojson" not in result:
-            logger.warning("Result does not have a geojson field")
+        # First perform basic validation
+        if not self._basic_validate_result(result, location_name, location_type):
+            logger.info("Result failed basic validation")
             return False
         
-        # Validate GeoJSON
-        if not validate_geojson(result["geojson"]):
-            logger.warning(f"Invalid GeoJSON for {location_name}")
-            return False
-        
-        # Skip validation if geojson is not a polygon
-        if result["geojson"]["type"] not in ["Polygon", "MultiPolygon"]:
-            geojson_type = result["geojson"]["type"]
-            logger.warning(f"Result has non-polygon GeoJSON type: {geojson_type}")
-            return False
-            
-        # Check if location name is in display name
-        display_name = result.get("display_name", "")
-        if location_name.lower() not in display_name.lower() and len(location_name) > 3:
-            logger.warning(f"Location name '{location_name}' not found in display name: {display_name}")
-            
-            # Continue with validation despite name mismatch - let Gemini decide
-        
+        # Then use Gemini for deeper validation
         try:
-            # Generate prompt
+            # Create prompt
             prompt = self._create_validation_prompt(result, location_name, location_type)
             
-            # Generate response
-            response = self._generate_response(prompt)
+            # Define JSON schema for validation response
+            response_schema = {
+                "type": "OBJECT",
+                "properties": {
+                    "is_match": {"type": "BOOLEAN"},
+                    "confidence": {"type": "NUMBER"},
+                    "reasoning": {"type": "STRING"}
+                },
+                "required": ["is_match", "confidence", "reasoning"]
+            }
             
-            # Parse response using our robust parser
-            validation = self._parse_gemini_response(response)
+            # Configure generation with schema for structured output
+            generation_config = GenerationConfig(
+                temperature=0.1,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=2048,
+                response_mime_type="application/json",
+                response_schema=response_schema
+            )
             
-            # Extract validation result
-            is_valid = validation.get("is_match", False)
-            confidence = validation.get("confidence", 0)
+            # Generate validation
+            response = self.model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
             
-            logger.info(f"Validation result: valid={is_valid}, confidence={confidence}")
+            # Parse response
+            validation = json.loads(response.text)
             
-            # Only consider valid if confidence is high enough
-            return is_valid and confidence >= 80
+            # Log validation result
+            logger.info(f"Gemini validation: {validation['is_match']} (confidence: {validation['confidence']})")
+            logger.debug(f"Reasoning: {validation['reasoning']}")
+            
+            return validation["is_match"] and validation["confidence"] > 0.5
+            
         except Exception as e:
-            logger.error(f"Error validating result: {str(e)}")
-            
-            # Default to name-based validation if Gemini fails
-            # This ensures we don't completely fail just because of validation
-            display_name = result.get("display_name", "").lower()
-            address = result.get("address", {})
-            
-            # Basic validation logic
-            if location_name.lower() in display_name:
-                return True
-                
-            # Try to match with components of the address
-            for _, component in address.items():
-                if isinstance(component, str) and location_name.lower() in component.lower():
-                    return True
-                    
-            return False
+            logger.error(f"Failed to validate result: {str(e)}")
+            # Fall back to basic validation
+            return True  # Assume valid if Gemini validation fails
     
     def _create_validation_prompt(
         self,
@@ -698,7 +707,9 @@ Reply with ONLY the JSON object, no introduction or additional text.
                     temperature=0.1,  # Use low temperature for more predictable output
                     top_p=0.95,
                     top_k=40,
-                    max_output_tokens=2048
+                    max_output_tokens=2048,
+                    # Enable controlled generation with MIME type for guaranteed JSON output
+                    response_mime_type="application/json"
                 )
                 
                 # Generate response

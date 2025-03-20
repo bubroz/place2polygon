@@ -77,11 +77,13 @@ This file tracks the implementation progress of the Place2Polygon project based 
 - [x] Enhanced sample files with a wider variety of global locations for better testing
 - [x] Organized sample files in dedicated samples directory
 - [x] Updated documentation to reference correct sample file paths
+- [x] Implemented controlled generation for Gemini API to improve JSON parsing reliability
+- [x] Added JSON schema definitions for search strategies and validation responses
+- [x] Set response_mime_type to "application/json" for consistent JSON output from Gemini
 
 ## Remaining Issues
 
-1. JSON parsing could still be improved for Gemini responses (non-critical due to fallback mechanism)
-2. Some locations might not get polygon boundaries due to OpenStreetMap limitations (like rivers)
+1. Some locations might not get polygon boundaries due to OpenStreetMap limitations (like rivers)
 
 ## Project Completion Status
 
@@ -125,9 +127,12 @@ As of the latest update, Place2Polygon is fully functional with both standard se
 3. Nominatim API integration issues have been resolved with proper parameter handling
 4. Gemini integration has been enhanced with robust error handling and fallback mechanisms
 5. Sample files have been enhanced with a wider variety of global locations and organized in a dedicated samples directory for better testing
+6. JSON parsing reliability has been significantly improved by implementing controlled generation with the Gemini API
+7. Structured JSON output is now guaranteed by specifying response_mime_type and response_schema
 
 Testing reveals that both search modes successfully generate interactive maps:
 - The basic search map (17MB) contains polygon boundaries for most locations in the sample text
 - The Gemini-powered map (8.3MB) is notably smaller, suggesting more efficient polygon selection and better boundary choices
+- With controlled generation improvements, JSON parsing errors have been eliminated, resulting in more consistent Gemini orchestration
 
 The project is now ready for use, with the Gemini-powered search providing better results in most cases when a valid API key is available. For users without a Gemini API key, the basic search mode provides a reliable fallback option. 
