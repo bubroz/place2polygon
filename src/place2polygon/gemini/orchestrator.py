@@ -278,14 +278,29 @@ class GeminiOrchestrator:
             }
             
             # Configure generation with schema for structured output
-            generation_config = GenerationConfig(
-                temperature=0.1,
-                top_p=0.95,
-                top_k=40,
-                max_output_tokens=2048,
-                response_mime_type="application/json",
-                response_schema=response_schema
-            )
+            config_params = {
+                "temperature": 0.1,
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 2048
+            }
+            
+            # Check if structured output parameters are supported
+            try:
+                # Try creating a config with response_mime_type to test
+                test_config = GenerationConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                    response_schema={"type": "OBJECT"}
+                )
+                # If no error, add the parameters
+                config_params["response_mime_type"] = "application/json"
+                config_params["response_schema"] = response_schema
+                logger.info("Using structured output parameters for JSON generation")
+            except TypeError:
+                logger.warning("Structured output parameters not supported in this version of google.generativeai library")
+            
+            generation_config = GenerationConfig(**config_params)
             
             # Generate search strategies
             response = self.model.generate_content(
@@ -494,14 +509,29 @@ Do not include any explanations or additional text, just return the JSON array.
             }
             
             # Configure generation with schema for structured output
-            generation_config = GenerationConfig(
-                temperature=0.1,
-                top_p=0.95,
-                top_k=40,
-                max_output_tokens=2048,
-                response_mime_type="application/json",
-                response_schema=response_schema
-            )
+            config_params = {
+                "temperature": 0.1,
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 2048
+            }
+            
+            # Check if structured output parameters are supported
+            try:
+                # Try creating a config with response_mime_type to test
+                test_config = GenerationConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                    response_schema={"type": "OBJECT"}
+                )
+                # If no error, add the parameters
+                config_params["response_mime_type"] = "application/json"
+                config_params["response_schema"] = response_schema
+                logger.info("Using structured output parameters for JSON generation")
+            except TypeError:
+                logger.warning("Structured output parameters not supported in this version of google.generativeai library")
+            
+            generation_config = GenerationConfig(**config_params)
             
             # Generate validation
             response = self.model.generate_content(
@@ -703,16 +733,30 @@ Reply with ONLY the JSON object, no introduction or additional text.
         for attempt in range(max_retries + 1):
             try:
                 # Configure generation parameters for more reliable structured output
-                generation_config = GenerationConfig(
-                    temperature=0.1,  # Use low temperature for more predictable output
-                    top_p=0.95,
-                    top_k=40,
-                    max_output_tokens=2048,
-                    # Enable controlled generation with MIME type for guaranteed JSON output
-                    response_mime_type="application/json"
-                )
+                config_params = {
+                    "temperature": 0.1,  # Use low temperature for more predictable output
+                    "top_p": 0.95,
+                    "top_k": 40,
+                    "max_output_tokens": 2048
+                }
+                
+                # Check if response_mime_type is supported in this version of the library
+                try:
+                    # Try creating a config with response_mime_type to test
+                    test_config = GenerationConfig(
+                        temperature=0.1,
+                        response_mime_type="application/json"
+                    )
+                    # If no error, add the parameter
+                    config_params["response_mime_type"] = "application/json"
+                    logger.info("Using response_mime_type for structured JSON output")
+                except TypeError:
+                    # response_mime_type not supported in this version
+                    logger.warning("response_mime_type not supported in this version of google.generativeai library")
                 
                 # Generate response
+                generation_config = GenerationConfig(**config_params)
+                
                 response = self.model.generate_content(
                     prompt,
                     generation_config=generation_config
