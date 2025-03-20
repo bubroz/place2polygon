@@ -27,6 +27,25 @@ This project was developed 100% with Claude-3.7-Sonnet in Cursor.
 
 The primary purpose of Place2Polygon is to reliably extract accurate GeoJSON polygon boundaries from Nominatim for locations mentioned in text. While the tool generates interactive map visualizations (map.html files), these are primarily for demonstration and analysis purposes. The retrieved GeoJSON data can be used in various downstream applications beyond visualization.
 
+## Performance Testing & Analysis
+
+Place2Polygon includes tools for evaluating and visualizing search performance:
+
+- **Performance Evaluation Script**: Compare Normal vs Gemini search modes on any sample text
+  ```bash
+  python scripts/evaluate_performance.py samples/local_places_of_interest.txt --output report.json
+  ```
+
+- **Dashboard Generator**: Create an interactive HTML visualization of performance metrics
+  ```bash
+  python scripts/generate_dashboard.py report.json --output dashboard.html
+  ```
+
+These tools help understand the strengths and limitations of different search strategies. Testing shows that:
+- Normal mode performs well for English-language locations, with 100% match rate
+- Gemini mode struggles with international locations that use non-Latin character names
+- Normal mode is generally faster but Gemini often provides more precise boundary selection
+
 ## Current Coverage
 
 Place2Polygon currently focuses on United States locations with plans to expand to other countries in future releases. The US focus provides:

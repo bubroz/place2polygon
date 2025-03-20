@@ -80,10 +80,17 @@ This file tracks the implementation progress of the Place2Polygon project based 
 - [x] Implemented controlled generation for Gemini API to improve JSON parsing reliability
 - [x] Added JSON schema definitions for search strategies and validation responses
 - [x] Set response_mime_type to "application/json" for consistent JSON output from Gemini
+- [x] Added performance evaluation script to compare Normal vs Gemini search modes (scripts/evaluate_performance.py)
+- [x] Created HTML dashboard generator for visualizing performance metrics (scripts/generate_dashboard.py)
+- [x] Implemented version compatibility for Google Generative AI library with structured output parameters
 
 ## Remaining Issues
 
 1. Some locations might not get polygon boundaries due to OpenStreetMap limitations (like rivers)
+2. Gemini mode struggles with international locations that use non-Latin characters
+3. Validation in Gemini mode is too strict for international locations with normalized or native-language names
+4. Issues with possessive forms of location names in Gemini validation
+5. Current version of Google Generative AI library does not fully support structured output features needed for optimal Gemini performance
 
 ## Project Completion Status
 
