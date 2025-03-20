@@ -4,7 +4,7 @@ A tool for extracting location mentions from text and finding their precise poly
 
 ## Development
 
-This project was developed 100% with Claude-3.7-Sonnet in Cursor, demonstrating the capabilities of AI pair programming for geospatial application development.
+This project was developed 100% with Claude-3.7-Sonnet in Cursor.
 
 ## Features
 
