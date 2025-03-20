@@ -112,10 +112,10 @@ The tool can be used with either the standard Gemini integration or the basic se
 
 ```bash
 # With Gemini integration (recommended)
-python -m place2polygon map samples/global_conflict_zones.txt --output map.html
+python -m place2polygon map samples/global_conflict_zones.txt --output map.html --gemini
 
 # With basic search only (if experiencing issues)
-python -m place2polygon map samples/global_conflict_zones.txt --output map.html --no-gemini
+python -m place2polygon map samples/global_conflict_zones.txt --output map.html
 ```
 
 ## Current Status Summary

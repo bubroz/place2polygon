@@ -89,6 +89,10 @@ class NominatimClient:
             if key in kwargs:
                 extracted_structured[key] = kwargs.pop(key)
         
+        # Handle location_type parameter which is used internally but not by Nominatim API
+        if 'location_type' in kwargs:
+            kwargs.pop('location_type')
+        
         if extracted_structured and not structured_query:
             structured_query = extracted_structured
         
