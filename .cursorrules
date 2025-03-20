@@ -1,0 +1,157 @@
+# Place2Polygon Cursor Rules
+
+# Python Formatting Settings
+language: python
+python_formatter: black
+tab_size: 4
+use_spaces: true
+
+# Default File Organization
+src_directory: src/place2polygon
+test_directory: tests
+docs_directory: docs
+
+# Project Structure Rules
+require_init_in_packages: true
+require_docstrings: true
+require_type_annotations: true
+max_line_length: 88  # Black default
+require_trailing_newline: true
+
+# Code Quality Rules
+enforce_pep8: true
+warn_on_unused_imports: true
+warn_on_undefined_variables: true
+warn_on_undefined_imports: true
+
+# Project-Specific Rules
+important_modules:
+  - spacy
+  - geopandas
+  - folium
+  - shapely
+  - sqlite3
+  - google.generativeai
+  - httpx  # Preferred over requests for HTTP clients
+  - pathlib  # Preferred for file path operations
+  - tomllib  # For TOML parsing
+  - python-dotenv  # For environment variable management
+
+# Dependency Management
+package_manager: poetry
+config_file: pyproject.toml
+enforce_poetry_structure: true
+
+# Documentation Guidelines
+required_docstring_sections:
+  - Args
+  - Returns
+  - Examples (optional for private methods)
+
+# Files and Patterns to Ignore
+ignore_patterns:
+  - "*.pyc"
+  - "__pycache__"
+  - ".venv/*"
+  - "*.log"
+  - "*.db"
+  - "*.sqlite"
+  - "cache/*"
+  - ".pytest_cache/*"
+  - ".coverage"
+  - "dist/*"
+  - "*.egg-info"
+  - ".env"  # Ignore environment variables file containing secrets
+  - ".DS_Store"  # macOS specific
+  - ".idea/"  # PyCharm
+  - ".vscode/"  # VS Code (optional - you might want to share these settings)
+
+# Code Completion Settings
+enable_python_autocompletion: true
+python_autocomplete_imports: true
+suggest_variable_names: true
+
+# Context-Aware Completions
+context_libraries:
+  - name: spacy
+    docs_url: https://spacy.io/api/
+  - name: geopandas
+    docs_url: https://geopandas.org/en/stable/docs/reference.html
+  - name: folium
+    docs_url: https://python-visualization.github.io/folium/
+  - name: nominatim
+    docs_url: https://nominatim.org/release-docs/latest/api/
+  - name: google.generativeai
+    docs_url: https://ai.google.dev/gemini-api/docs
+  - name: httpx
+    docs_url: https://www.python-httpx.org/
+  - name: pathlib
+    docs_url: https://docs.python.org/3/library/pathlib.html
+  - name: python-dotenv
+    docs_url: https://saurabh-kumar.com/python-dotenv/
+
+# Testing Configuration
+test_framework: pytest
+require_tests: true
+test_file_pattern: "test_*.py"
+
+# Preferences
+prefer_pathlib_over_os: true
+prefer_toml_for_config: true
+prefer_json_for_data: true
+prefer_logging_over_print: true
+
+# GitHub Configuration
+github:
+  workflows:
+    - name: CI
+      events: [push, pull_request]
+      jobs: [lint, test]
+  branch_naming:
+    pattern: "^(feature|bugfix|hotfix|chore|docs)/[a-z0-9-_]+$"
+  commit_message:
+    pattern: "^(feat|fix|docs|style|refactor|test|chore)(\\(.+\\))?:\\s.+"
+
+# Environment Variables
+env_management:
+  dotenv_file: .env
+  example_file: .env.example
+  required_vars:
+    - GOOGLE_API_KEY
+    - NOMINATIM_USER_AGENT
+
+# Project Layout Recommendations
+recommended_file_structure: |
+  src/
+  ├── place2polygon/
+  │   ├── __init__.py
+  │   ├── core/
+  │   │   ├── __init__.py
+  │   │   ├── location_extractor.py
+  │   │   ├── nominatim_client.py
+  │   │   ├── boundary_selector.py
+  │   │   └── map_visualizer.py
+  │   ├── cache/
+  │   │   ├── __init__.py
+  │   │   ├── sqlite_cache.py
+  │   │   └── cache_manager.py
+  │   ├── gemini/
+  │   │   ├── __init__.py
+  │   │   ├── orchestrator.py
+  │   │   └── documentation_provider.py
+  │   └── utils/
+  │       ├── __init__.py
+  │       ├── rate_limiter.py
+  │       └── validators.py
+  ├── tests/
+  │   ├── unit/
+  │   └── integration/
+  ├── docs/
+  ├── .github/
+  │   └── workflows/
+  │       ├── ci.yml
+  │       └── release.yml
+  ├── .env.example
+  ├── pyproject.toml
+  ├── README.md
+  └── Place2Polygon_PRD.md 

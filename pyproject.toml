@@ -1,0 +1,82 @@
+[tool.poetry]
+name = "place2polygon"
+version = "0.1.0"
+description = "A tool for extracting location mentions from text and finding their precise polygon boundaries using OpenStreetMap data"
+authors = ["Zac Forristall <zforristall@gmail.com>"]
+readme = "README.md"
+license = "Proprietary"
+private = true
+repository = "https://github.com/bubroz/place2polygon"
+keywords = ["geospatial", "nlp", "openstreetmap", "nominatim", "polygon", "gemini"]
+packages = [{include = "place2polygon", from = "src"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Text Processing :: Linguistic",
+]
+
+[tool.poetry.dependencies]
+python = ">=3.8,<3.12"
+spacy = "^3.6.1"
+geopandas = "^0.14.1"
+folium = "^0.14.0"
+shapely = "^2.0.2"
+httpx = "^0.25.2"
+google-generativeai = "^0.3.2"
+python-dotenv = "^1.0.0"
+typer = "^0.9.0"  # CLI interface
+rich = "^13.6.0"  # Enhanced terminal output
+tomli = {version = "^2.0.1", python = "<3.11"}  # TOML parsing for Python <3.11
+pandas = "^2.1.1"
+pyarrow = "^14.0.1"  # Recommended by pandas for improved performance
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-cov = "^4.1.0"
+black = "^23.10.1"
+isort = "^5.12.0"
+mypy = "^1.6.1"
+flake8 = "^6.1.0"
+pre-commit = "^3.5.0"
+sphinx = "^7.2.6"
+sphinx-rtd-theme = "^1.3.0"
+types-requests = "^2.31.0.10"
+
+[tool.poetry.scripts]
+place2polygon = "place2polygon.cli:app"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py38"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = ["geopandas.*", "folium.*", "shapely.*", "google.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "--cov=place2polygon --cov-report=term-missing --cov-report=xml:coverage.xml" 
