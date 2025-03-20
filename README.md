@@ -63,13 +63,13 @@ The simplest way to use Place2Polygon is through the command-line interface:
 
 ```bash
 # Extract locations from a text file
-python -m place2polygon extract sample.txt --output locations.json
+python -m place2polygon extract samples/global_conflict_zones.txt --output locations.json
 
 # Create a map from locations in a text file (basic search mode)
-python -m place2polygon map sample.txt --output map.html
+python -m place2polygon map samples/global_conflict_zones.txt --output map.html
 
 # Create a map with Gemini integration (requires API key)
-python -m place2polygon map sample.txt --output map.html --gemini
+python -m place2polygon map samples/global_conflict_zones.txt --output map.html --gemini
 
 # Set up Gemini integration
 python -m place2polygon setup_gemini

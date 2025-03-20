@@ -74,6 +74,9 @@ This file tracks the implementation progress of the Place2Polygon project based 
 - [x] Added robust JSON parsing with regex fallbacks
 - [x] Enhanced strategy prompt clarity for better Gemini responses
 - [x] Fixed bug in CLI where Nominatim client search results were treated as a dictionary instead of a list
+- [x] Enhanced sample files with a wider variety of global locations for better testing
+- [x] Organized sample files in dedicated samples directory
+- [x] Updated documentation to reference correct sample file paths
 
 ## Remaining Issues
 
@@ -107,10 +110,10 @@ The tool can be used with either the standard Gemini integration or the basic se
 
 ```bash
 # With Gemini integration (recommended)
-python -m place2polygon map sample.txt --output map.html
+python -m place2polygon map samples/global_conflict_zones.txt --output map.html
 
 # With basic search only (if experiencing issues)
-python -m place2polygon map sample.txt --output map.html --no-gemini
+python -m place2polygon map samples/global_conflict_zones.txt --output map.html --no-gemini
 ```
 
 ## Current Status Summary
@@ -121,6 +124,7 @@ As of the latest update, Place2Polygon is fully functional with both standard se
 2. NumPy version conflicts have been addressed by pinning to < 2.0.0
 3. Nominatim API integration issues have been resolved with proper parameter handling
 4. Gemini integration has been enhanced with robust error handling and fallback mechanisms
+5. Sample files have been enhanced with a wider variety of global locations and organized in a dedicated samples directory for better testing
 
 Testing reveals that both search modes successfully generate interactive maps:
 - The basic search map (17MB) contains polygon boundaries for most locations in the sample text
