@@ -70,15 +70,7 @@ class NominatimClient:
         Returns:
             List of search results.
         """
-        # Parameter validation
-        if not query and not structured_query:
-            raise ValueError("Either query or structured_query must be provided")
-        
-        if query and not validate_location_name(query):
-            logger.warning(f"Invalid query: {query}")
-            return []
-        
-        # Prepare parameters
+        # Parameter validation and preparation
         params = {
             "format": "json",
             "limit": limit,
@@ -86,8 +78,28 @@ class NominatimClient:
             "addressdetails": 1 if addressdetails else 0,
         }
         
-        # Add query or structured query
+        # Fix: Correctly handle query parameters
+        if 'q' in kwargs and not query:
+            query = kwargs.pop('q')
+        
+        # Fix: Handle when parameters like city, county, etc. are passed directly
+        structured_keys = ['city', 'county', 'state', 'country', 'postalcode']
+        extracted_structured = {}
+        for key in structured_keys:
+            if key in kwargs:
+                extracted_structured[key] = kwargs.pop(key)
+        
+        if extracted_structured and not structured_query:
+            structured_query = extracted_structured
+        
+        # Check that either query or structured_query is provided
+        if not query and not structured_query:
+            raise ValueError("Either query or structured_query must be provided")
+        
         if query:
+            if not validate_location_name(query):
+                logger.warning(f"Invalid query: {query}")
+                return []
             params["q"] = query
         elif structured_query:
             params.update(structured_query)
@@ -252,33 +264,28 @@ class NominatimClient:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.get(url, headers=headers)
                 
-                # Check for HTTP errors
+                # Check if the request was successful
                 response.raise_for_status()
                 
-                # Parse JSON response
-                if response.text.strip():
-                    return response.json()
-                else:
-                    return []
+                # Parse the response as JSON
+                return response.json()
                 
+        except httpx.RequestError as e:
+            logger.error(f"Request error: {str(e)}")
+            raise
+            
         except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error {e.response.status_code}: {str(e)}")
+            
+            # Special handling for rate limit errors
             if e.response.status_code == 429:
-                logger.warning("Rate limit exceeded, will retry with backoff")
-                raise
-            elif e.response.status_code == 404:
-                logger.warning(f"No results found for request: {url}")
-                return []
-            else:
-                logger.error(f"HTTP error: {e}")
-                raise
-                
-        except httpx.TimeoutException:
-            logger.error(f"Request timed out: {url}")
+                logger.warning("Rate limit exceeded, consider adjusting your rate limiter configuration")
+            
             raise
             
         except Exception as e:
-            logger.error(f"Request failed: {str(e)}")
+            logger.error(f"Unexpected error: {str(e)}")
             raise
 
-# Create a default instance
+# Create a default client instance
 default_client = NominatimClient()

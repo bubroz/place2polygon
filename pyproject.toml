@@ -5,7 +5,6 @@ description = "A tool for extracting location mentions from text and finding the
 authors = ["Zac Forristall <zforristall@gmail.com>"]
 readme = "README.md"
 license = "Proprietary"
-private = true
 repository = "https://github.com/bubroz/place2polygon"
 keywords = ["geospatial", "nlp", "openstreetmap", "nominatim", "polygon", "gemini"]
 packages = [{include = "place2polygon", from = "src"}]
@@ -23,7 +22,7 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.12"
+python = ">=3.9,<3.12"
 spacy = "^3.6.1"
 geopandas = "^0.14.1"
 folium = "^0.14.0"

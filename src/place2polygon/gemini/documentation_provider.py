@@ -392,6 +392,65 @@ class NominatimDocsProvider:
             "recommended_params": ["q"],
             "fallback_params": ["q"]
         })
+    
+    def get_search_strategies(self) -> Dict[str, Any]:
+        """
+        Get a collection of common search strategies.
+        
+        Returns:
+            Dictionary containing recommended search strategies for different location types.
+        """
+        strategies = {
+            "common_params": {
+                "polygon_geojson": 1,
+                "addressdetails": 1,
+                "extratags": True,
+                "limit": 5
+            },
+            "city_strategy": self.get_search_strategy("city"),
+            "state_strategy": self.get_search_strategy("state"),
+            "county_strategy": self.get_search_strategy("county"),
+            "country_strategy": self.get_search_strategy("country"),
+            "recommended_params": [
+                "q", "city", "county", "state", "country", "postalcode",
+                "polygon_geojson", "addressdetails", "extratags", "limit"
+            ],
+            "strategies": [
+                {
+                    "description": "Basic query with location name",
+                    "params": {
+                        "q": "<location_name>",
+                        "polygon_geojson": 1,
+                        "addressdetails": 1,
+                        "limit": 5
+                    },
+                    "explanation": "Simple free-form search by name"
+                },
+                {
+                    "description": "Structured search with location type",
+                    "params": {
+                        "<location_type>": "<location_name>",
+                        "polygon_geojson": 1,
+                        "addressdetails": 1,
+                        "limit": 3
+                    },
+                    "explanation": "Targeted search using the specific location type field"
+                },
+                {
+                    "description": "Search with OSM tags",
+                    "params": {
+                        "q": "<location_name>",
+                        "polygon_geojson": 1,
+                        "addressdetails": 1,
+                        "extratags": 1,
+                        "limit": 5
+                    },
+                    "explanation": "Search with extra OSM tags for better filtering"
+                }
+            ]
+        }
+        
+        return strategies
 
 # Create a default instance
 default_provider = NominatimDocsProvider()

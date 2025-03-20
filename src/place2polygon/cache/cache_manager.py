@@ -205,6 +205,29 @@ class CacheManager:
             True if successful, False otherwise.
         """
         return self.cache.clear_all()
+    
+    def get(self, key: str) -> Optional[Any]:
+        """
+        Get a value from the cache by key.
+        
+        Args:
+            key: Cache key.
+            
+        Returns:
+            The cached value, or None if not found or expired.
+        """
+        return self.cache.get(f"{self.cache_prefix}{key}")
+    
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+        """
+        Store a value in the cache.
+        
+        Args:
+            key: Cache key.
+            value: Value to store.
+            ttl: Time-to-live in days.
+        """
+        self.cache.set(f"{self.cache_prefix}{key}", value, ttl=ttl)
 
 # Create a default instance
 default_manager = CacheManager()

@@ -240,5 +240,98 @@ class BoundarySelector:
         
         return feature_collection
 
+    def select_best(self, results, location_name=None, location_type=None):
+        """
+        Select the best boundary from the search results.
+        
+        Args:
+            results: List of search results from Nominatim
+            location_name: Name of the location being searched for
+            location_type: Type of location (city, county, etc.)
+            
+        Returns:
+            The best result from the list
+        """
+        return select_best_boundary(results, location_name, location_type)
+
 # Create a default instance
 default_selector = BoundarySelector()
+
+def select_best_boundary(results, location_name=None, location_type=None):
+    """
+    Select the best boundary from the search results.
+    
+    Args:
+        results: List of search results from Nominatim
+        location_name: Name of the location to search for
+        location_type: Type of location (city, county, etc.)
+    
+    Returns:
+        The best result from the list
+    """
+    # Return None if no results
+    if not results:
+        return None
+    
+    # Filter out results without polygons
+    polygon_results = []
+    for result in results:
+        if "geojson" in result and result["geojson"] is not None:
+            geojson_type = result.get("geojson", {}).get("type", "")
+            if geojson_type in ["Polygon", "MultiPolygon"]:
+                polygon_results.append(result)
+    
+    if not polygon_results:
+        logger.warning("No results with valid polygons found")
+        return None
+        
+    # If only one result, return it
+    if len(polygon_results) == 1:
+        return polygon_results[0]
+    
+    # Prefer exact matches by name if location_name is provided
+    if location_name:
+        exact_matches = []
+        for result in polygon_results:
+            display_name = result.get("display_name", "").lower()
+            name = result.get("name", "").lower()
+            
+            # Extract address components
+            address_components = []
+            if "address" in result and result["address"]:
+                address_components = [v.lower() for v in result["address"].values()]
+            
+            location_name_lower = location_name.lower()
+            
+            # Check if the location name is in any of the name fields
+            if (location_name_lower in display_name or
+                location_name_lower == name or
+                any(location_name_lower in component for component in address_components)):
+                exact_matches.append(result)
+                
+        if exact_matches:
+            polygon_results = exact_matches
+    
+    # Prefer results with higher importance
+    polygon_results.sort(key=lambda r: float(r.get("importance", 0)), reverse=True)
+    
+    # Filter by type if provided
+    if location_type:
+        type_matches = []
+        for result in polygon_results:
+            if "type" in result and result["type"]:
+                # Normalize the type names for matching
+                result_type = result["type"].lower()
+                location_type_lower = location_type.lower()
+                
+                # Check for matches in type field
+                if (result_type == location_type_lower or 
+                    location_type_lower in result_type or 
+                    result_type in location_type_lower):
+                    type_matches.append(result)
+                    
+        if type_matches:
+            return type_matches[0]  # Return the first match by type
+    
+    # Return the result with highest importance
+    return polygon_results[0]

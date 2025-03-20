@@ -9,6 +9,7 @@ import os
 import sys
 from typing import Optional
 import logging
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -17,6 +18,9 @@ from rich import print as rprint
 
 import place2polygon
 from place2polygon import extract_and_map_locations, extract_locations, find_polygon_boundaries, create_map, export_to_geojson
+from place2polygon.core.location_extractor import LocationExtractor
+from place2polygon.core.map_visualizer import MapVisualizer
+from place2polygon.core.nominatim_client import default_client
 
 # Set up logging with rich
 logging.basicConfig(
@@ -73,65 +77,124 @@ def extract(
 
 @app.command()
 def map(
-    input_file: str = typer.Argument(..., help="Input text file path"),
-    output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Output HTML map file path"),
-    geojson_file: Optional[str] = typer.Option(None, "--geojson", "-g", help="Output GeoJSON file path"),
-    min_relevance: float = typer.Option(30.0, "--min-relevance", "-r", help="Minimum relevance score (0-100)"),
-    cache_ttl: Optional[int] = typer.Option(30, "--cache-ttl", "-c", help="Cache TTL in days"),
-    title: Optional[str] = typer.Option(None, "--title", "-t", help="Map title"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
-    open_browser: bool = typer.Option(False, "--open", "-b", help="Open map in browser"),
-    use_gemini: bool = typer.Option(True, "--gemini/--no-gemini", help="Use Gemini for intelligent search")
-):
-    """
-    Extract locations from a text file and create an interactive map.
-    """
-    if verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-    
+    ctx: typer.Context,
+    file: str = typer.Argument(..., help="Text file to extract locations from"),
+    output: str = typer.Option("map.html", "--output", "-o", help="Output file for the map"),
+    use_gemini: bool = typer.Option(False, "--gemini", "-g", help="Use Gemini for orchestration"),
+    cache_stats: bool = typer.Option(False, "--cache-stats", "-c", help="Show cache statistics"),
+) -> int:
+    """Generate a map from a text file."""
     try:
-        # Read input file
-        with open(input_file, 'r', encoding='utf-8') as f:
+        with open(file, "r") as f:
             text = f.read()
+            
+        logger.info("Extracting locations from text")
+        extractor = LocationExtractor()
+        locations = extractor.extract_locations(text)
+        logger.info(f"Found {len(locations)} relevant locations")
         
-        # Generate title if not provided
-        if not title:
-            title = f"Places in {os.path.basename(input_file)}"
+        # Find the polygon boundaries for each location
+        client = default_client
         
-        # Check if we can use Gemini
-        if use_gemini and not os.environ.get("GOOGLE_API_KEY"):
-            console.print("[yellow]Warning: GOOGLE_API_KEY not set. Disabling Gemini.[/yellow]")
-            use_gemini = False
+        # Use the gemini orchestrator if requested
+        if use_gemini:
+            logger.info("Using Gemini orchestration for polygon searches")
+            from place2polygon.gemini.orchestrator import GeminiOrchestrator, default_orchestrator
+            if default_orchestrator is None:
+                logger.warning("Gemini orchestration not available, using basic client")
+            else:
+                client = default_orchestrator
         
-        # Extract locations and create map
-        locations, map_path = extract_and_map_locations(
-            text,
-            output_path=output_file,
-            cache_ttl=cache_ttl,
-            min_relevance_score=min_relevance,
-            map_title=title,
-            use_gemini=use_gemini
-        )
+        # Create a new map
+        map_vis = MapVisualizer()
         
-        console.print(f"[bold green]Found {len(locations)} locations[/bold green]")
-        console.print(f"[bold green]Map created at {map_path}[/bold green]")
+        # Debug log the first location structure
+        if locations and len(locations) > 0:
+            logger.info(f"First location structure: {locations[0]}")
         
-        # Export to GeoJSON if specified
-        if geojson_file and locations:
-            geojson_path = export_to_geojson(locations, geojson_file)
-            console.print(f"[bold green]GeoJSON exported to {geojson_path}[/bold green]")
+        # Process each location
+        locations_with_boundaries = []
+        for location in locations:
+            name = location["name"]
+            entity_type = location.get("type", "").lower()
+            
+            # Make "gpe" more user friendly
+            if entity_type == "gpe":
+                entity_type = "city"
+                
+            logger.info(f"Finding polygon boundary for {name} ({entity_type}) {'' if not use_gemini else 'using Gemini'}")
+            
+            try:
+                result = None
+                
+                # Try to find with gemini first if available
+                if use_gemini and hasattr(client, "orchestrate_search"):
+                    try:
+                        result = client.orchestrate_search(name, location_type=entity_type)
+                    except Exception as e:
+                        logger.error(f"Error finding boundary with Gemini: {str(e)}")
+                        logger.warning(f"Falling back to basic search for {name}")
+                        
+                # If gemini search failed or not available, try basic search
+                if result is None:
+                    results = client.search(name, location_type=entity_type)
+                    # Get the first result if there are any
+                    result = results[0] if results else None
+                    
+                # If we found a result, add it to the map
+                if result:
+                    try:
+                        # Store the result in a format compatible with the map visualizer
+                        boundary_data = {
+                            "name": name,
+                            "type": entity_type,
+                            "boundary": result["geojson"] if "geojson" in result else None,
+                            "osm_id": result.get("osm_id"),
+                            "osm_type": result.get("osm_type"),
+                            "address": result.get("address", {})
+                        }
+                        
+                        # Add coordinates if available
+                        if "lat" in result and "lon" in result:
+                            boundary_data["latitude"] = float(result["lat"])
+                            boundary_data["longitude"] = float(result["lon"])
+                            
+                        # Store for later adding to the map
+                        locations_with_boundaries.append(boundary_data)
+                    except Exception as e:
+                        logger.error(f"Error adding boundary for {name}: {str(e)}")
+                else:
+                    logger.warning(f"No boundary found for {name}")
+            except Exception as e:
+                logger.error(f"Error finding boundary for {name}: {str(e)}")
+                logger.warning(f"No boundary found for {name}")
+                
+        # Create the map with all found boundaries
+        if locations_with_boundaries:
+            # Create the map with all found boundaries
+            map_output_path = map_vis.create_map(
+                locations=locations_with_boundaries,
+                output_path=output,
+                title=f"Place2Polygon: {len(locations_with_boundaries)} Locations"
+            )
+            logger.info(f"Map saved to {map_output_path}")
+        else:
+            logger.warning("No boundaries found for any locations")
         
-        # Open in browser if requested
-        if open_browser and map_path:
-            import webbrowser
-            webbrowser.open(f"file://{os.path.abspath(map_path)}")
-        
-        return locations, map_path
+        # Show cache stats if requested
+        if cache_stats:
+            stats = client.get_cache_stats()
+            print("\nCache Statistics:")
+            print(f"  Hits: {stats['hits']}")
+            print(f"  Misses: {stats['misses']}")
+            print(f"  Hit Rate: {stats['hit_rate']:.1%}")
+            print(f"  Size: {stats['size']} items")
+            
     except Exception as e:
-        console.print(f"[bold red]Error: {str(e)}[/bold red]")
-        if verbose:
-            logger.exception("Error details")
-        return [], ""
+        logger.error(f"Error: {str(e)}")
+        return 1
+        
+    return 0
 
 @app.command()
 def setup_gemini():

@@ -139,83 +139,102 @@ def find_polygons_with_gemini(
     cache_ttl: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
-    Find polygon boundaries for locations using Gemini orchestration.
+    Find polygon boundaries for locations using Gemini to orchestrate searches.
     
     Args:
         locations: List of location dictionaries.
-        orchestrator: GeminiOrchestrator instance to use.
-        cache_manager: CacheManager instance to use.
-        cache_ttl: Cache time-to-live in days. Default uses system setting.
+        orchestrator: GeminiOrchestrator instance.
+        cache_manager: CacheManager instance.
+        cache_ttl: Cache time-to-live in days.
         
     Returns:
-        Locations with boundary data.
+        List of locations with boundaries added.
     """
     enriched_locations = []
     
     for location in locations:
-        location_name = location['name']
-        location_type = location['type']
+        location_name = location.get('name', '')
+        location_type = location.get('type', None)
         
-        logger.info(f"Finding polygon boundary for {location_name} ({location_type}) using Gemini")
-        
-        # Try to get from cache
-        cache_key = f"boundary_{location_name}_{location_type}"
-        cached_result = cache_manager.get_cached_result(cache_key)
-        
-        if cached_result:
-            logger.info(f"Found cached boundary for {location_name}")
-            # Merge the cached boundary data with the location data
-            location_with_boundary = {**location, **cached_result}
-            enriched_locations.append(location_with_boundary)
+        # Skip if already has a boundary
+        if location.get('boundary'):
+            enriched_locations.append(location)
             continue
         
-        # Extract context information for the location
-        location_context = {
-            'context_sentences': location.get('context_sentences', []),
-            'related_locations': location.get('related_locations', [])
-        }
+        # Try to get from cache first
+        cache_key = f"boundary_{location_name}_{location_type or 'unknown'}"
+        cached_data = cache_manager.get(cache_key)
         
-        # Add state information if available from related locations
-        for related in location.get('related_locations', []):
-            if related.get('relationship') == 'parent' and related.get('type') == 'state':
-                location_context['state'] = related.get('name')
+        if cached_data:
+            logger.info(f"Found cached boundary for {location_name}")
+            location['boundary'] = cached_data
+            location['boundary_source'] = 'cache'
+            enriched_locations.append(location)
+            continue
         
-        # Use Gemini to orchestrate the search
-        result = orchestrator.orchestrate_search(
-            location_name=location_name,
-            location_type=location_type,
-            location_context=location_context
-        )
+        # Not in cache, use Gemini to find
+        logger.info(f"Finding polygon boundary for {location_name} ({location_type or 'unknown type'}) using Gemini")
         
-        if result:
-            # Extract coordinates for marker fallback
-            if 'lat' in result and 'lon' in result:
-                lat = float(result['lat'])
-                lon = float(result['lon'])
-            else:
-                lat, lon = None, None
-            
-            # Extract boundary data
-            boundary_data = {
-                'boundary': result.get('geojson'),
-                'display_name': result.get('display_name'),
-                'osm_id': result.get('osm_id'),
-                'osm_type': result.get('osm_type'),
-                'latitude': lat,
-                'longitude': lon,
-                'address': result.get('address', {}),
+        try:
+            # Create context for location
+            location_context = {
+                'nearby_locations': [loc.get('name') for loc in locations if loc != location][:5],
+                'relevance_score': location.get('relevance_score', 0)
             }
             
-            # Cache the boundary data
-            cache_manager.cache_result(boundary_data, cache_ttl, cache_key)
+            # Use Gemini to orchestrate search
+            result = orchestrator.orchestrate_search(
+                location_name=location_name,
+                location_type=location_type,
+                location_context=location_context
+            )
             
-            # Merge the location data with the boundary data
-            location_with_boundary = {**location, **boundary_data}
-            enriched_locations.append(location_with_boundary)
-        else:
-            logger.warning(f"No boundary found for {location_name}")
-            # Keep the location without a boundary
-            enriched_locations.append(location)
+            # Check if we found a valid boundary
+            if result and result.get('geojson'):
+                location['boundary'] = result.get('geojson')
+                location['boundary_source'] = 'gemini'
+                location['boundary_metadata'] = {
+                    'osm_id': result.get('osm_id'),
+                    'osm_type': result.get('osm_type'),
+                    'importance': result.get('importance'),
+                    'display_name': result.get('display_name')
+                }
+                
+                # Cache the result
+                cache_manager.set(cache_key, result.get('geojson'), ttl=cache_ttl)
+                
+            else:
+                # Fall back to basic search if Gemini fails
+                logger.warning(f"Gemini search failed for {location_name}, trying basic search")
+                basic_result = find_polygon_boundaries(
+                    [location],
+                    client=orchestrator.nominatim_client,
+                    cache_manager=cache_manager,
+                    cache_ttl=cache_ttl
+                )
+                
+                if basic_result and basic_result[0].get('boundary'):
+                    location = basic_result[0]
+                else:
+                    logger.warning(f"No boundary found for {location_name}")
+        
+        except Exception as e:
+            logger.error(f"Error finding boundary with Gemini: {str(e)}")
+            # Fall back to basic search on exception
+            logger.warning(f"Falling back to basic search for {location_name}")
+            basic_result = find_polygon_boundaries(
+                [location],
+                client=orchestrator.nominatim_client,
+                cache_manager=cache_manager,
+                cache_ttl=cache_ttl
+            )
+            
+            if basic_result and basic_result[0].get('boundary'):
+                location = basic_result[0]
+            else:
+                logger.warning(f"No boundary found for {location_name}")
+        
+        enriched_locations.append(location)
     
     return enriched_locations
 
