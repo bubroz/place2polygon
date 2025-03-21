@@ -27,6 +27,32 @@ This project was developed 100% with Claude-3.7-Sonnet in Cursor.
 
 The primary purpose of Place2Polygon is to reliably extract accurate GeoJSON polygon boundaries from Nominatim for locations mentioned in text. While the tool generates interactive map visualizations (map.html files), these are primarily for demonstration and analysis purposes. The retrieved GeoJSON data can be used in various downstream applications beyond visualization.
 
+## Organized Output Management
+
+Place2Polygon includes a structured output management system:
+
+- All outputs are stored in a `place2polygon_output` directory with subdirectories:
+  - `maps/` - Interactive HTML map files
+  - `reports/` - Performance reports and dashboards
+  - `data/` - Extracted location data
+  - `cache/` - Cache database
+
+Files are automatically named with timestamps to prevent overwrites. The CLI includes commands to manage outputs:
+
+```bash
+# List recent output files
+python -m place2polygon list
+
+# List only maps or reports or data
+python -m place2polygon list --type maps
+
+# Clean up old files (default 30 days)
+python -m place2polygon cleanup
+
+# Clean up specific types with custom age
+python -m place2polygon cleanup --directories maps reports --max-age 14
+```
+
 ## Performance Testing & Analysis
 
 Place2Polygon includes tools for evaluating and visualizing search performance:
