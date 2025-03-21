@@ -26,6 +26,7 @@ from place2polygon.core.location_extractor import LocationExtractor
 from place2polygon.core.nominatim_client import NominatimClient
 from place2polygon.gemini.orchestrator import GeminiOrchestrator, default_orchestrator
 from place2polygon.core.boundary_selector import select_best_boundary
+from place2polygon.utils import default_output_manager
 
 def process_file(file_path: str, use_gemini: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Process a file and return the extracted locations with their boundaries."""
@@ -207,6 +208,14 @@ def main():
     stats_gemini = None
     if has_gemini and not args.normal_only:
         _, stats_gemini = process_file(args.file, use_gemini=True)
+    
+    # Generate report path if not specified
+    if not args.output:
+        file_base = os.path.basename(args.file)
+        args.output = str(default_output_manager.get_report_path(
+            report_type="performance",
+            filename=f"performance_{file_base.replace('.txt', '')}.json"
+        ))
     
     # Generate report
     generate_report(stats_normal, stats_gemini, args.output)

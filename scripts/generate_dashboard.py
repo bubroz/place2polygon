@@ -14,6 +14,11 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any
 
+# Add the src directory to the path so we can import place2polygon
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from place2polygon.utils import default_output_manager
+
 def generate_html_header(file_name: str, timestamp: str) -> str:
     """Generate the HTML header section."""
     try:
@@ -428,7 +433,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate HTML dashboard from performance data")
     parser.add_argument("input_file", help="Path to the performance JSON file")
     parser.add_argument("--output", "-o", help="Path to save the HTML dashboard", 
-                      default="performance_dashboard.html")
+                      default=None)
     args = parser.parse_args()
     
     # Load performance data
@@ -438,6 +443,14 @@ def main():
     except Exception as e:
         print(f"Error loading performance data: {str(e)}")
         sys.exit(1)
+    
+    # Generate output path if not specified
+    if not args.output:
+        file_base = os.path.basename(args.input_file)
+        args.output = str(default_output_manager.get_report_path(
+            report_type="dashboard",
+            filename=f"dashboard_{file_base.replace('.json', '')}.html"
+        ))
     
     # Generate report
     generate_html_report(performance_data, args.output)

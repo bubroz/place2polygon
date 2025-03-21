@@ -1,233 +1,319 @@
 """
-Cache manager module for managing the Nominatim cache.
+Cache manager module for storing and retrieving Nominatim API responses.
 
-This module provides high-level cache management functions that use
-the SQLiteCache implementation for storing and retrieving Nominatim results.
+This module provides a cache manager class that uses SQLite to store API responses.
 """
 
-import hashlib
-import json
-from typing import Dict, List, Optional, Any, Union, Callable
-import logging
-import threading
-import time
 import os
+import sqlite3
+import logging
+import json
+import time
+from typing import Dict, Any, Optional, List
+from pathlib import Path
 
-from place2polygon.cache.sqlite_cache import SQLiteCache, default_cache
+from place2polygon.utils import default_output_manager
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_DB_PATH = 'place2polygon_cache.db'
+DEFAULT_TTL_DAYS = 30  # 30 days default TTL
+
 class CacheManager:
     """
-    Manager for the Nominatim cache.
+    Cache manager for storing and retrieving Nominatim API responses.
     
-    Args:
-        cache: The cache implementation to use.
-        auto_cleanup_interval: Interval for automatic cleanup in seconds (0 to disable).
-        cache_prefix: Prefix for cache keys.
+    Uses SQLite to store responses and provides methods for managing the cache.
     """
     
-    def __init__(
-        self,
-        cache: SQLiteCache = default_cache,
-        auto_cleanup_interval: int = 3600 * 24,  # Once per day
-        cache_prefix: str = "nominatim_"
-    ):
-        """Initialize the cache manager."""
-        self.cache = cache
-        self.auto_cleanup_interval = auto_cleanup_interval
-        self.cache_prefix = cache_prefix
-        self._cleanup_thread = None
-        self._stop_cleanup = threading.Event()
-        
-        # Start auto-cleanup if enabled
-        if auto_cleanup_interval > 0:
-            self._start_auto_cleanup()
-    
-    def _start_auto_cleanup(self) -> None:
-        """Start the automatic cleanup thread."""
-        def cleanup_task():
-            while not self._stop_cleanup.is_set():
-                try:
-                    # Sleep first to avoid immediate cleanup on startup
-                    self._stop_cleanup.wait(self.auto_cleanup_interval)
-                    if not self._stop_cleanup.is_set():
-                        cleared = self.cache.clear_expired()
-                        logger.info(f"Auto-cleanup cleared {cleared} expired cache entries")
-                except Exception as e:
-                    logger.error(f"Error in auto-cleanup task: {str(e)}")
-        
-        self._cleanup_thread = threading.Thread(target=cleanup_task, daemon=True)
-        self._cleanup_thread.start()
-    
-    def stop(self) -> None:
-        """Stop the cache manager (cleanup thread)."""
-        if self._cleanup_thread:
-            self._stop_cleanup.set()
-            self._cleanup_thread.join(timeout=1.0)
-            self._cleanup_thread = None
-    
-    def _generate_key(self, *args, **kwargs) -> str:
+    def __init__(self, db_path: Optional[str] = None, ttl_days: int = DEFAULT_TTL_DAYS):
         """
-        Generate a cache key from the arguments.
+        Initialize the cache manager.
         
         Args:
-            *args: Positional arguments to include in the key.
-            **kwargs: Keyword arguments to include in the key.
-            
-        Returns:
-            The generated cache key.
+            db_path: Path to the SQLite database file. If None, uses place2polygon_output/cache directory.
+            ttl_days: Default time-to-live in days for cached items.
         """
-        # Create a hashable representation of the arguments
-        key_data = {
-            'args': args,
-            'kwargs': kwargs
-        }
+        # Use the output manager to get the cache directory
+        if db_path is None:
+            cache_dir = default_output_manager.get_cache_dir()
+            db_path = str(cache_dir / DEFAULT_DB_PATH)
         
-        # Generate a consistent JSON string
-        key_json = json.dumps(key_data, sort_keys=True)
+        self.db_path = db_path
+        self.ttl_days = ttl_days
+        self.conn = None
         
-        # Generate an MD5 hash of the JSON string
-        key_hash = hashlib.md5(key_json.encode('utf-8')).hexdigest()
+        # Initialize the database
+        self._init_db()
         
-        # Combine prefix and hash
-        return f"{self.cache_prefix}{key_hash}"
+        logger.info(f"Cache initialized at {self.db_path}")
     
-    def get_cached_result(self, *args, **kwargs) -> Optional[Any]:
+    def _init_db(self) -> None:
+        """Initialize the SQLite database if it doesn't exist."""
+        # Create directory if it doesn't exist
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+        
+        # Connect to the database
+        self.conn = sqlite3.connect(self.db_path)
+        cursor = self.conn.cursor()
+        
+        # Create the cache table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cache (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                created REAL NOT NULL,
+                expires REAL NOT NULL
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS stats (
+                name TEXT PRIMARY KEY,
+                value INTEGER NOT NULL
+            )
+        ''')
+        
+        # Initialize stats if they don't exist
+        stats = ['hits', 'misses', 'size']
+        for stat in stats:
+            cursor.execute('INSERT OR IGNORE INTO stats (name, value) VALUES (?, 0)', (stat,))
+        
+        self.conn.commit()
+    
+    def get(self, key: str) -> Optional[Dict[str, Any]]:
         """
-        Get a cached result.
+        Get an item from the cache by key.
         
         Args:
-            *args: Positional arguments used to generate the cache key.
-            **kwargs: Keyword arguments used to generate the cache key.
+            key: The cache key.
             
         Returns:
-            The cached result, or None if not found or expired.
+            The cached item, or None if not found or expired.
         """
-        key = self._generate_key(*args, **kwargs)
-        result = self.cache.get(key)
+        if not self.conn:
+            self._init_db()
         
-        if result is not None:
-            self.cache.record_hit()
-            logger.debug(f"Cache hit for key: {key}")
-            return result
+        cursor = self.conn.cursor()
+        
+        # Get item from cache
+        cursor.execute('SELECT value, expires FROM cache WHERE key = ?', (key,))
+        result = cursor.fetchone()
+        
+        if result:
+            value, expires = result
+            
+            # Check if expired
+            if expires < time.time():
+                # Remove expired item
+                cursor.execute('DELETE FROM cache WHERE key = ?', (key,))
+                self.conn.commit()
+                
+                # Update stats
+                self._increment_stat('misses')
+                self._decrement_stat('size')
+                
+                return None
+            
+            # Update stats
+            self._increment_stat('hits')
+            
+            # Return the cached item
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to decode cached item: {key}")
+                return None
         else:
-            self.cache.record_miss()
-            logger.debug(f"Cache miss for key: {key}")
+            # Update stats
+            self._increment_stat('misses')
+            
             return None
     
-    def cache_result(self, result: Any, ttl: Optional[int] = None, *args, **kwargs) -> None:
+    def set(self, key: str, value: Dict[str, Any], ttl: Optional[int] = None) -> None:
         """
-        Cache a result.
+        Set an item in the cache.
         
         Args:
-            result: The result to cache.
-            ttl: Time-to-live in days, or None to use the default.
-            *args: Positional arguments used to generate the cache key.
-            **kwargs: Keyword arguments used to generate the cache key.
+            key: The cache key.
+            value: The value to cache.
+            ttl: Time-to-live in days. If None, uses the default TTL.
         """
-        key = self._generate_key(*args, **kwargs)
-        success = self.cache.set(key, result, ttl)
-        if success:
-            logger.debug(f"Cached result for key: {key}")
+        if not self.conn:
+            self._init_db()
+        
+        cursor = self.conn.cursor()
+        
+        # Use default TTL if not specified
+        if ttl is None:
+            ttl = self.ttl_days
+        
+        # Calculate expiration time
+        created = time.time()
+        expires = created + (ttl * 24 * 60 * 60)  # Convert days to seconds
+        
+        # Serialize value to JSON
+        try:
+            json_value = json.dumps(value)
+        except (TypeError, ValueError):
+            logger.warning(f"Failed to encode value for cache key: {key}")
+            return
+        
+        # Check if item already exists
+        cursor.execute('SELECT 1 FROM cache WHERE key = ?', (key,))
+        exists = cursor.fetchone() is not None
+        
+        # Update or insert item
+        if exists:
+            cursor.execute('UPDATE cache SET value = ?, created = ?, expires = ? WHERE key = ?',
+                          (json_value, created, expires, key))
         else:
-            logger.warning(f"Failed to cache result for key: {key}")
+            cursor.execute('INSERT INTO cache (key, value, created, expires) VALUES (?, ?, ?, ?)',
+                          (key, json_value, created, expires))
+            self._increment_stat('size')
+        
+        self.conn.commit()
     
-    def invalidate_cached_result(self, *args, **kwargs) -> bool:
+    def delete(self, key: str) -> bool:
         """
-        Invalidate a cached result.
+        Delete an item from the cache.
         
         Args:
-            *args: Positional arguments used to generate the cache key.
-            **kwargs: Keyword arguments used to generate the cache key.
+            key: The cache key.
             
         Returns:
-            True if the result was invalidated, False otherwise.
+            True if the item was deleted, False otherwise.
         """
-        key = self._generate_key(*args, **kwargs)
-        return self.cache.invalidate(key)
-    
-    def wrapped_with_cache(self, func: Callable, ttl: Optional[int] = None) -> Callable:
-        """
-        Wrap a function with caching.
+        if not self.conn:
+            self._init_db()
         
-        Args:
-            func: The function to wrap.
-            ttl: Time-to-live in days, or None to use the default.
-            
+        cursor = self.conn.cursor()
+        
+        # Delete item
+        cursor.execute('DELETE FROM cache WHERE key = ?', (key,))
+        deleted = cursor.rowcount > 0
+        
+        if deleted:
+            self._decrement_stat('size')
+        
+        self.conn.commit()
+        
+        return deleted
+    
+    def clear(self) -> None:
+        """Clear all items from the cache."""
+        if not self.conn:
+            self._init_db()
+        
+        cursor = self.conn.cursor()
+        
+        # Clear cache
+        cursor.execute('DELETE FROM cache')
+        
+        # Reset stats
+        cursor.execute('UPDATE stats SET value = 0')
+        
+        self.conn.commit()
+    
+    def clean_expired(self) -> int:
+        """
+        Remove all expired items from the cache.
+        
         Returns:
-            The wrapped function.
+            Number of items removed.
         """
-        def wrapper(*args, **kwargs):
-            # Check if skip_cache flag is set
-            skip_cache = kwargs.pop('skip_cache', False)
-            
-            if not skip_cache:
-                # Try to get from cache
-                cached_result = self.get_cached_result(func.__name__, *args, **kwargs)
-                if cached_result is not None:
-                    return cached_result
-            
-            # Call the function
-            result = func(*args, **kwargs)
-            
-            # Cache the result (unless skip_cache is set)
-            if not skip_cache:
-                self.cache_result(result, ttl, func.__name__, *args, **kwargs)
-            
-            return result
+        if not self.conn:
+            self._init_db()
         
-        return wrapper
+        cursor = self.conn.cursor()
+        
+        # Delete expired items
+        cursor.execute('DELETE FROM cache WHERE expires < ?', (time.time(),))
+        deleted_count = cursor.rowcount
+        
+        if deleted_count > 0:
+            # Update size stat
+            cursor.execute('UPDATE stats SET value = value - ? WHERE name = ?',
+                          (deleted_count, 'size'))
+        
+        self.conn.commit()
+        
+        return deleted_count
     
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> Dict[str, Any]:
         """
         Get cache statistics.
         
         Returns:
-            Dictionary of cache statistics.
+            Dictionary with cache statistics.
         """
-        return self.cache.get_stats()
-    
-    def clear_expired_entries(self) -> int:
-        """
-        Clear expired cache entries.
+        if not self.conn:
+            self._init_db()
         
-        Returns:
-            Number of entries cleared.
-        """
-        return self.cache.clear_expired()
-    
-    def clear_all_entries(self) -> bool:
-        """
-        Clear all cache entries.
+        cursor = self.conn.cursor()
         
-        Returns:
-            True if successful, False otherwise.
-        """
-        return self.cache.clear_all()
+        # Get all stats
+        cursor.execute('SELECT name, value FROM stats')
+        stats = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        # Calculate hit rate
+        total_requests = stats.get('hits', 0) + stats.get('misses', 0)
+        hit_rate = stats.get('hits', 0) / max(total_requests, 1)
+        
+        return {
+            'hits': stats.get('hits', 0),
+            'misses': stats.get('misses', 0),
+            'hit_rate': hit_rate,
+            'size': stats.get('size', 0),
+            'db_path': self.db_path
+        }
     
-    def get(self, key: str) -> Optional[Any]:
+    def _increment_stat(self, name: str, amount: int = 1) -> None:
+        """Increment a stat by the given amount."""
+        cursor = self.conn.cursor()
+        cursor.execute('UPDATE stats SET value = value + ? WHERE name = ?',
+                      (amount, name))
+    
+    def _decrement_stat(self, name: str, amount: int = 1) -> None:
+        """Decrement a stat by the given amount."""
+        cursor = self.conn.cursor()
+        cursor.execute('UPDATE stats SET value = value - ? WHERE name = ?',
+                      (amount, name))
+    
+    def get_keys(self, pattern: Optional[str] = None) -> List[str]:
         """
-        Get a value from the cache by key.
+        Get all cache keys matching the pattern.
         
         Args:
-            key: Cache key.
+            pattern: SQL LIKE pattern to match keys.
             
         Returns:
-            The cached value, or None if not found or expired.
+            List of matching cache keys.
         """
-        return self.cache.get(f"{self.cache_prefix}{key}")
-    
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
-        """
-        Store a value in the cache.
+        if not self.conn:
+            self._init_db()
         
-        Args:
-            key: Cache key.
-            value: Value to store.
-            ttl: Time-to-live in days.
-        """
-        self.cache.set(f"{self.cache_prefix}{key}", value, ttl=ttl)
+        cursor = self.conn.cursor()
+        
+        # Query keys
+        if pattern:
+            cursor.execute('SELECT key FROM cache WHERE key LIKE ?', (pattern,))
+        else:
+            cursor.execute('SELECT key FROM cache')
+        
+        return [row[0] for row in cursor.fetchall()]
+    
+    def close(self) -> None:
+        """Close the database connection."""
+        if self.conn:
+            self.conn.close()
+            self.conn = None
+    
+    def __del__(self) -> None:
+        """Clean up on object destruction."""
+        self.close()
 
-# Create a default instance
+# Create default cache manager instance
 default_manager = CacheManager()
